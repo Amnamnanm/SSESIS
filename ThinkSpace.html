@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThinkSpace - Autonomous Thought Toolkit</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a; --surface-color: #242424; --canvas-color: #161616;
+            --primary-color: #7e57c2; --secondary-color: #00acc1; --text-color: #f0f0f0;
+            --text-muted-color: #888; --border-color: #3a3a3a; --error-color: #ef5350;
+            --success-color: #66bb6a; --shadow-color: rgba(0, 0, 0, 0.4);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color); color: var(--text-color);
+            display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+        }
+        .app-header {
+            padding: 0.75rem 2rem; background-color: var(--surface-color); border-bottom: 1px solid var(--border-color);
+            display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 1rem;
+        }
+        .app-header .title { flex-shrink: 0; }
+        .app-header h1 { font-size: 1.25rem; font-weight: 500; }
+        .app-header h1 span { color: var(--primary-color); font-weight: 600; }
+        .controls { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+        .controls .input-group { display: flex; flex-direction: column; }
+        .controls label { font-size: 0.8rem; color: var(--text-muted-color); margin-bottom: 0.25rem;}
+        .controls input[type="text"], .controls input[type="password"], .controls input[type="number"] {
+            padding: 0.5rem 0.75rem; background-color: var(--bg-color); border: 1px solid var(--border-color);
+            border-radius: 6px; color: var(--text-color); font-size: 0.9rem; transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .controls input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(126, 87, 194, 0.3); }
+        .header-button {
+            background: var(--surface-color); border: 1px solid var(--border-color); color: var(--text-muted-color);
+            padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; transition: all 0.2s;
+            align-self: flex-end; height: 35px;
+        }
+        .header-button:hover { color: var(--text-color); border-color: var(--text-muted-color); }
+        #api-status { font-size: 0.8rem; align-self: flex-end; padding-bottom: 0.5rem; transition: color 0.3s; }
+
+        .main-content { display: flex; flex-grow: 1; overflow: hidden; }
+        .canvas-container { flex: 1; background-color: var(--canvas-color); padding: 2rem; overflow: auto; border-right: 1px solid var(--border-color); }
+        .task-tree ul { padding-left: 30px; position: relative; }
+        .task-tree ul::before { content: ''; position: absolute; top: 0; bottom: 0; left: 10px; width: 1px; background: var(--border-color); }
+        .task-tree li { list-style: none; position: relative; }
+        .task-tree li::before { content: ''; position: absolute; top: 22px; left: -20px; width: 20px; height: 1px; background: var(--border-color); }
+        .node-content { display: flex; align-items: center; gap: 0.5rem; background-color: var(--surface-color); padding: 0.5rem 1rem; border-radius: 8px; margin: 0.75rem 0; border: 1px solid var(--border-color); transition: border-color 0.2s, box-shadow 0.2s; cursor: pointer; }
+        .node-content.selected { border-color: var(--primary-color); box-shadow: 0 0 8px rgba(126, 87, 194, 0.5); }
+        .node-text { flex-grow: 1; padding: 0.25rem; }
+        .node-text:focus { background: var(--bg-color); outline: none; border-radius: 4px; }
+        .node-actions button { background: none; border: 1px solid var(--border-color); color: var(--text-muted-color); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+        .node-actions button:hover { color: var(--text-color); border-color: var(--text-muted-color); }
+        .node-actions .run-btn { border-color: var(--primary-color); color: var(--primary-color); font-size: 1.2rem; }
+        .node-actions .run-btn:hover { background-color: rgba(126, 87, 194, 0.1); }
+        .node-actions .ai-btn { border-color: var(--secondary-color); color: var(--secondary-color); }
+        .node-actions .ai-btn:hover { background-color: rgba(0, 172, 193, 0.1); color: #80deea; }
+        .node-actions .add-btn { border-color: var(--success-color); color: var(--success-color); }
+        .node-actions .add-btn:hover { background-color: rgba(102, 187, 106, 0.1); color: #a5d6a7; }
+        .node-actions .del-btn { border-color: var(--error-color); color: var(--error-color); }
+        .node-actions .del-btn:hover { background-color: rgba(239, 83, 80, 0.1); color: #ef9a9a; }
+
+        .right-column { width: 40%; max-width: 600px; display: flex; flex-direction: column; }
+        .detail-pane { flex-grow: 1; background-color: var(--surface-color); padding: 1.5rem 2rem; overflow-y: auto; display: flex; flex-direction: column; }
+        .detail-placeholder { text-align: center; margin: auto; color: var(--text-muted-color); }
+        .detail-content { display: none; flex-direction: column; gap: 1rem; }
+        .whi-block { display: flex; flex-direction: column; }
+        .whi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .whi-header label { font-size: 1.1rem; font-weight: 500; color: var(--primary-color); }
+        .whi-header button { background: none; border: 1px solid var(--secondary-color); color: var(--secondary-color); padding: 0.25rem 0.75rem; border-radius: 15px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; }
+        .whi-header button:hover:not(:disabled) { background-color: rgba(0, 172, 193, 0.1); }
+        .whi-block textarea { width: 100%; min-height: 100px; background-color: var(--bg-color); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-color); padding: 0.75rem; font-size: 1rem; resize: vertical; }
+        .whi-block textarea:focus { outline: none; border-color: var(--primary-color); }
+        #whi-answer { border-top: 2px solid var(--success-color); padding-top: 1rem; }
+        #whi-answer label { color: var(--success-color); }
+        #answer-input { min-height: 150px; background-color: #1f2d20; color: #c8e6c9; }
+        .status-pane { flex-shrink: 0; height: 200px; background-color: var(--bg-color); border-top: 1px solid var(--border-color); padding: 1rem; overflow-y: auto; font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; }
+        .status-pane .log { margin-bottom: 0.5rem; white-space: pre-wrap; word-break: break-word; }
+        .status-pane .log.error { color: var(--error-color); }
+        .status-pane .log.success { color: var(--success-color); }
+        .status-pane .log.plan { color: var(--secondary-color); }
+        .status-pane .log.info { color: var(--text-muted-color); }
+        .spinner { border: 2px solid var(--border-color); width: 16px; height: 16px; border-radius: 50%; border-left-color: var(--text-muted-color); animation: spin 1s ease infinite; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <header class="app-header">
+        <div class="title"><h1>Think<span>Space</span> v1.0</h1></div>
+        <div class="controls">
+            <button id="new-project-btn" class="header-button">New Project</button>
+            <button id="summarize-btn" class="header-button">Summarize</button>
+            <button class="header-button">Generate Solution</button>
+            <div class="input-group">
+                <label for="max-depth-input">Max Depth</label>
+                <input type="number" id="max-depth-input" value="3" min="0" max="10" style="width: 70px;">
+            </div>
+            <div class="input-group">
+                <label for="simplification-model-input">Simplification Model (Gemma)</label>
+                <input type="text" id="simplification-model-input" placeholder="e.g., models/gemma-3-27b-it">
+            </div>
+             <div class="input-group">
+                <label for="inquiry-model-input">Inquiry Model (Gemini)</label>
+                <input type="text" id="inquiry-model-input" placeholder="e.g., models/gemini-2.5-flash-lite">
+            </div>
+            <div class="input-group">
+                <label for="apiKey">Your Google AI API Key (Optional)</label>
+                <input type="password" id="apiKey" placeholder="Encrypted & stored locally" title="Your key is encrypted using a device-specific key. Leave blank for Local Mode.">
+            </div>
+            <div id="api-status"></div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="canvas-container"><div id="task-tree" class="task-tree"></div></div>
+        <div class="right-column">
+            <div class="detail-pane">
+                <div id="detail-placeholder" class="detail-placeholder"><h2>Select a node to begin.</h2></div>
+                <div id="detail-content" class="detail-content">
+                    <div id="whi-context" class="whi-block">
+                        <div class="whi-header"><label for="context-input">Additional Context</label><button id="shorten-context-btn">Shorten</button></div>
+                        <textarea id="context-input" placeholder="Provide background info, constraints, or goals for this specific task."></textarea>
+                    </div>
+                    <div id="whi-what" class="whi-block">
+                        <div class="whi-header"><label for="what-input">WHAT</label><button class="ai-assist-btn" data-type="what">AI Assist</button></div>
+                        <textarea id="what-input" placeholder="What is the fundamental problem or goal?"></textarea>
+                    </div>
+                    <div id="whi-how" class="whi-block">
+                        <div class="whi-header"><label for="how-input">HOW</label><button class="ai-assist-btn" data-type="how">AI Assist</button></div>
+                        <textarea id="how-input" placeholder="How can this be achieved? Outline a plan."></textarea>
+                    </div>
+                    <div id="whi-is" class="whi-block">
+                        <div class="whi-header"><label for="is-input">IS</label><button class="ai-assist-btn" data-type="is">AI Assist</button></div>
+                        <textarea id="is-input" placeholder="Is this the best approach? What are the risks or alternatives?"></textarea>
+                    </div>
+                    <div id="whi-answer" class="whi-block" style="display: none;">
+                        <div class="whi-header"><label for="answer-input">Final Answer</label></div>
+                        <textarea id="answer-input" readonly placeholder="The autonomous agent will generate a final answer here."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div id="status-pane" class="status-pane"><div class="log">Welcome to ThinkSpace v1.0. Enter an API key or use Local Mode.</div></div>
+        </div>
+    </main>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- DATA MODEL & STATE ---
+        const initialTree = () => ({ id: 'node-root', text: 'Define the ultimate goal here', what: '', how: '', is: '', answer: '', context: '', children: [] });
+        const defaultSettings = { simplificationModel: 'models/gemma-3-27b-it', inquiryModel: 'models/gemini-2.5-flash-lite' };
+        let taskTree = initialTree();
+        let selectedNodeId = 'node-root';
+        let nextNodeId = 0;
+        let settings = { ...defaultSettings };
+        let deviceEncryptionKey = null;
+
+        // --- DOM ELEMENTS ---
+        const apiKeyInput = document.getElementById('apiKey');
+        const apiStatus = document.getElementById('api-status');
+        const treeContainer = document.getElementById('task-tree');
+        const detailPlaceholder = document.getElementById('detail-placeholder');
+        const detailContent = document.getElementById('detail-content');
+        const contextInput = document.getElementById('context-input');
+        const whatInput = document.getElementById('what-input');
+        const howInput = document.getElementById('how-input');
+        const isInput = document.getElementById('is-input');
+        const newProjectBtn = document.getElementById('new-project-btn');
+        const simplificationModelInput = document.getElementById('simplification-model-input');
+        const inquiryModelInput = document.getElementById('inquiry-model-input');
+        const statusPane = document.getElementById('status-pane');
+        const shortenContextBtn = document.getElementById('shorten-context-btn');
+        const answerBlock = document.getElementById('whi-answer');
+        const answerInput = document.getElementById('answer-input');
+        const detailInputs = [contextInput, whatInput, howInput, isInput];
+        // NEW: Get new DOM elements
+        const summarizeBtn = document.getElementById('summarize-btn');
+        const maxDepthInput = document.getElementById('max-depth-input');
+
+        // --- ENCRYPTION HELPER --- (No changes here)
+        const CryptoHelper = { /* ... Omitted for brevity ... */ };
+        CryptoHelper.getGpuFingerprint = () => { try { const canvas = document.createElement('canvas'); const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl'); if (!gl) return 'no-webgl'; const debugInfo = gl.getExtension('WEBGL_debug_renderer_info'); if (!debugInfo) return 'no-debug-info'; const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL); const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL); return `${vendor}|${renderer}`; } catch (e) { return 'webgl-error'; } };
+        CryptoHelper.getDeviceFingerprint = async () => [navigator.userAgent, navigator.platform, navigator.hardwareConcurrency, screen.width, screen.height, CryptoHelper.getGpuFingerprint()].join('||');
+        CryptoHelper.generateKeyFromFingerprint = async () => { const fingerprint = await CryptoHelper.getDeviceFingerprint(); const data = new TextEncoder().encode(fingerprint); const hash = await crypto.subtle.digest('SHA-256', data); return await crypto.subtle.importKey('raw', hash, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']); };
+        CryptoHelper.encrypt = async (text, key) => { const data = new TextEncoder().encode(text); const iv = crypto.getRandomValues(new Uint8Array(12)); const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data); const ivB64 = btoa(String.fromCharCode.apply(null, iv)); const cipherB64 = btoa(String.fromCharCode.apply(null, new Uint8Array(ciphertext))); return { ivB64, cipherB64 }; };
+        CryptoHelper.decrypt = async (encryptedData, key) => { try { const iv = new Uint8Array(atob(encryptedData.ivB64).split('').map(c => c.charCodeAt(0))); const ciphertext = new Uint8Array(atob(encryptedData.cipherB64).split('').map(c => c.charCodeAt(0))); const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext); return new TextDecoder().decode(decrypted); } catch (e) { console.error("Decryption failed.", e); return null; } };
+
+        // --- LOGGING & FEEDBACK --- (No changes here)
+        function logStatus(message, type = 'info') { const log = document.createElement('div'); log.className = `log ${type}`; log.textContent = `[${new Date().toLocaleTimeString()}] ${message}`; statusPane.appendChild(log); statusPane.scrollTop = statusPane.scrollHeight; }
+
+        // --- CORE RENDER & STATE FUNCTIONS --- (No changes here)
+        function renderTree() { treeContainer.innerHTML = ''; const treeElement = createNodeElement(taskTree); treeContainer.appendChild(treeElement); }
+        function render() { renderTree(); renderDetailPane(); }
+        function saveState() { try { localStorage.setItem('thinkSpaceState', JSON.stringify({ tree: taskTree, nextId: nextNodeId, settings: settings })); } catch (e) { console.error("Failed to save state:", e); } }
+        function loadState() { try { const savedState = localStorage.getItem('thinkSpaceState'); if (savedState) { const state = JSON.parse(savedState); taskTree = state.tree || initialTree(); nextNodeId = state.nextId || 0; settings = state.settings || { ...defaultSettings }; } } catch (e) { console.error("Failed to load state, resetting.", e); taskTree = initialTree(); settings = { ...defaultSettings }; } simplificationModelInput.value = settings.simplificationModel; inquiryModelInput.value = settings.inquiryModel; }
+        function createNodeElement(node) { const ul = document.createElement('ul'); if (node.id === 'node-root') { ul.style.paddingLeft = '0'; ul.style.border = 'none'; } const li = document.createElement('li'); li.innerHTML = `<div class="node-content" id="${node.id}" data-node-id="${node.id}"><div class="node-text" contenteditable="true" data-node-id="${node.id}">${node.text}</div><div class="spinner" id="spinner-${node.id}"></div><div class="node-actions" style="display:flex; gap:0.5rem;"><button class="run-btn" title="Run Autonomous Agent" data-action="ai-run" data-node-id="${node.id}">&#9654;</button><button class="ai-btn" title="AI Simplify (Manual)" data-action="ai-simplify" data-node-id="${node.id}">&#10024;</button><button class="add-btn" title="Add Child (Manual)" data-action="add-children" data-node-id="${node.id}">➕</button>${node.id !== 'node-root' ? `<button class="del-btn" title="Delete Node" data-action="delete" data-node-id="${node.id}">🗑️</button>` : ''}</div></div>`; if (node.children && node.children.length > 0) { node.children.forEach(child => li.appendChild(createNodeElement(child))); } ul.appendChild(li); setTimeout(() => { const nodeEl = document.getElementById(node.id); if (nodeEl && node.id === selectedNodeId) nodeEl.classList.add('selected'); }, 0); return ul; }
+        function renderDetailPane() { const node = findNodeById(taskTree, selectedNodeId); if (node) { detailPlaceholder.style.display = 'none'; detailContent.style.display = 'flex'; contextInput.value = node.context; whatInput.value = node.what; howInput.value = node.how; isInput.value = node.is; if (node.answer) { answerInput.value = node.answer; answerBlock.style.display = 'flex'; } else { answerBlock.style.display = 'none'; } } else { detailPlaceholder.style.display = 'block'; detailContent.style.display = 'none'; } }
+
+        // --- DATA MANIPULATION & HELPERS --- (No changes here)
+        function findNodeById(node, id) { if (!node) return null; if (node.id === id) return node; for (const child of node.children) { const found = findNodeById(child, id); if (found) return found; } return null; }
+        function findParentNode(node, id) { for (const child of node.children) { if (child.id === id) return node; const found = findParentNode(child, id); if (found) return found; } return null; }
+        function generateNodeId() { return `node-${++nextNodeId}`; }
+        function addChildrenToNode(parentId, childrenData) { const parentNode = findNodeById(taskTree, parentId); if (parentNode) { childrenData.forEach(childText => { const newNode = { id: generateNodeId(), text: childText, what: '', how: '', is: '', answer: '', context: '', children: [] }; parentNode.children.push(newNode); }); saveState(); render(); } }
+        function deleteNode(nodeId) { if (nodeId === 'node-root') { alert("Cannot delete the root node."); return; } const parent = findParentNode(taskTree, nodeId); if (parent) { parent.children = parent.children.filter(child => child.id !== nodeId); if (selectedNodeId === nodeId) selectedNodeId = parent.id; saveState(); render(); } }
+        function getAncestorContext(nodeId) { let path = []; let current = findNodeById(taskTree, nodeId); let parent = findParentNode(taskTree, nodeId); while (parent) { path.unshift(`"${parent.text}"`); current = parent; parent = findParentNode(taskTree, current.id); } if (path.length === 0) return "This is the root task."; return `The context for the current task is the following path from the main goal: ${path.join(" -> ")}.`; }
+        function updateApiStatus(key) { if (key && key.length > 10) { apiStatus.textContent = '● API Key Loaded'; apiStatus.style.color = 'var(--success-color)'; } else { apiStatus.textContent = '● Local Mode (No Key)'; apiStatus.style.color = 'var(--secondary-color)'; } }
+
+        // --- EVENT LISTENERS ---
+        treeContainer.addEventListener('click', e => { const nodeContent = e.target.closest('.node-content'); if (nodeContent && nodeContent.id !== selectedNodeId) { selectedNodeId = nodeContent.id; render(); } const actionBtn = e.target.closest('button'); if(actionBtn) { const { action, nodeId } = actionBtn.dataset; if (action === 'add-children') addChildrenToNode(nodeId, ['New Sub-Task']); if (action === 'ai-simplify') handleAiSimplify(nodeId); if (action === 'ai-run') handleAiRun(nodeId); if (action === 'delete') { if (confirm('Are you sure you want to delete this node and all its children?')) deleteNode(nodeId); } } });
+        treeContainer.addEventListener('input', e => { if (e.target.classList.contains('node-text')) { const node = findNodeById(taskTree, e.target.dataset.nodeId); if (node) { node.text = e.target.textContent; saveState(); } } });
+        detailInputs.forEach(input => input.addEventListener('input', () => { const key = input.id.split('-')[0]; const node = findNodeById(taskTree, selectedNodeId); if(node) { node[key] = input.value; saveState(); } }));
+        detailContent.addEventListener('click', e => { if(e.target.classList.contains('ai-assist-btn')) handleAiAssist(e.target.dataset.type, e.target, null, selectedNodeId); });
+        newProjectBtn.addEventListener('click', () => { if (confirm('Are you sure? This will start a new project. Your API key will be saved.')) { localStorage.removeItem('thinkSpaceState'); location.reload(); } });
+        const settingsInputs = [simplificationModelInput, inquiryModelInput];
+        settingsInputs.forEach(input => input.addEventListener('change', () => { settings.simplificationModel = simplificationModelInput.value.trim(); settings.inquiryModel = inquiryModelInput.value.trim(); saveState(); }));
+        shortenContextBtn.addEventListener('click', async () => { const node = findNodeById(taskTree, selectedNodeId); if (!node || !node.context) { logStatus("No context to shorten.", "info"); return; } logStatus("Shortening context...", "plan"); const prompt = `Summarize the following text into its most essential points for an AI assistant. Be very concise.\n\nCONTEXT:\n${node.context}`; const summary = await callGenerativeAI(settings.inquiryModel, [{ role: 'user', parts: [{ text: prompt }] }], [shortenContextBtn]); if (summary) { node.context = summary; contextInput.value = summary; saveState(); logStatus("Context shortened successfully.", "success"); } else { logStatus("Failed to shorten context.", "error"); } });
+
+        // NEW: Event listener for the Summarize button
+        summarizeBtn.addEventListener('click', () => {
+            const rootNode = findNodeById(taskTree, 'node-root');
+            if (rootNode && rootNode.answer) {
+                alert(`--- Final Summary ---\n\n${rootNode.answer}`);
+            } else {
+                alert("The autonomous agent has not finished yet. Please run the agent on the root node and wait for it to complete.");
+            }
+        });
+
+        // --- API & AI LOGIC ---
+        
+        async function handleAiRun(nodeId) {
+            const rootNode = findNodeById(taskTree, nodeId);
+            if (!rootNode) return;
+            logStatus(`Orchestrator starting for node: "${rootNode.text}"`, 'info');
+            rootNode.answer = '';
+            
+            // NEW: Read max depth from the input field
+            const maxDepth = parseInt(maxDepthInput.value, 10) || 3;
+            logStatus(`Max recursion depth set to: ${maxDepth}`, 'info');
+
+            await recursiveDecomposition(rootNode, 0, maxDepth); // Pass maxDepth
+            logStatus('Orchestrator finished.', 'success');
+        }
+
+        // NEW: recursiveDecomposition now accepts maxDepth
+        async function recursiveDecomposition(node, depth, maxDepth) {
+            if (depth >= maxDepth) { // Use the maxDepth parameter
+                logStatus(`Max recursion depth reached for "${node.text}". Executing as is.`, 'info');
+                await handleOptimizedExecution(node);
+                return;
+            }
+
+            logStatus(`[Depth ${depth}] Planner assessing: "${node.text}"`, 'plan');
+            const subtaskTexts = await handleAiSimplify(node.id, true);
+
+            if (subtaskTexts && subtaskTexts.length > 0) {
+                logStatus(`[Depth ${depth}] Planner decomposed "${node.text}" into ${subtaskTexts.length} sub-tasks.`, 'success');
+                addChildrenToNode(node.id, subtaskTexts);
+                const subNodes = findNodeById(taskTree, node.id).children;
+
+                for (const subNode of subNodes) {
+                    await recursiveDecomposition(subNode, depth + 1, maxDepth); // Pass maxDepth down
+                }
+                logStatus(`Synthesizing solution for parent: "${node.text}"`, 'plan');
+                await handleOptimizedExecution(node, true);
+            } else {
+                logStatus(`[Depth ${depth}] Node "${node.text}" is a leaf. Engaging Executor.`, 'info');
+                await handleOptimizedExecution(node);
+            }
+        }
+
+        // <<< MAJOR CHANGE: handleAiSimplify now generates WHAT, HOW, IS and subtasks in one call >>>
+        async function handleAiSimplify(nodeId, silent = false) {
+            const node = findNodeById(taskTree, nodeId);
+            if (!node) return null;
+            if (!silent) node.children = [];
+            const spinner = document.getElementById(`spinner-${nodeId}`);
+            const ancestorContext = getAncestorContext(nodeId);
+            
+            // NEW: The prompt now asks for a comprehensive JSON object.
+            let promptText = `You are an expert task planner and analyst. Your goal is to analyze a task and, if necessary, break it down.
+            Your output MUST be a single, valid JSON object with the following structure:
+            {
+              "what": "A concise definition of the core problem or goal.",
+              "how": "A brief, high-level plan to achieve the goal.",
+              "is": "A critical analysis of the plan, mentioning risks or alternatives.",
+              "subtasks": ["An array of 2-4 smaller, actionable sub-task strings. If the task is simple enough and requires no decomposition, this MUST be an empty array []."]
+            }
+
+            Context: ${ancestorContext}
+            Task: "${node.text}"
+            Additional Info: "${node.context || 'None'}"`;
+
+            const model = settings.simplificationModel;
+            const result = await callGenerativeAI(model, [{ role: 'user', parts: [{ text: promptText }] }], [spinner]);
+            if (result) {
+                try {
+                    // Find and parse the JSON object from the response
+                    const jsonString = result.match(/\{[\s\S]*\}/)[0];
+                    const analysis = JSON.parse(jsonString);
+
+                    // Update the current node with the new analysis
+                    node.what = analysis.what || 'AI response format error.';
+                    node.how = analysis.how || 'AI response format error.';
+                    node.is = analysis.is || 'AI response format error.';
+
+                    if (node.id === selectedNodeId) {
+                        renderDetailPane(); // Update the UI if this node is selected
+                    }
+                    saveState();
+
+                    // Return the subtasks for the orchestrator to process
+                    if (Array.isArray(analysis.subtasks)) {
+                        return analysis.subtasks;
+                    }
+                    return []; 
+                } catch (e) {
+                    logStatus(`Planner Agent returned an invalid JSON object format. Error: ${e.message}`, "error");
+                    if(!silent) render();
+                    return null;
+                }
+            }
+            return null;
+        }
+
+        async function handleOptimizedExecution(node, isSynthesizing = false) {
+             if (!node) return;
+             const spinner = document.getElementById(`spinner-${node.id}`);
+             const ancestorContext = getAncestorContext(node.id);
+             let promptText;
+             if (isSynthesizing) {
+                let childrenContext = node.children.map(c => `- Sub-task "${c.text}":\n  - Solution: ${c.answer || 'Not yet solved.'}`).join("\n");
+                promptText = `You are a manager AI synthesizing a final solution from your team's work.
+                Your response must be structured into '### WHAT', '### HOW', '### IS', and a concluding '### FINAL ANSWER'.
+                CONTEXT:
+                - Main Task: "${node.text}"
+                - Solutions from Sub-tasks:\n${childrenContext}
+                Provide the complete analysis and the final answer.`;
+             } else {
+                promptText = `You are an AI assistant performing a complete Socratic analysis of a given task.
+                Your response must be structured into '### WHAT', '### HOW', '### IS', and a concluding '### FINAL ANSWER'.
+                CONTEXT:
+                - Ancestor Path: ${ancestorContext}
+                - Current Task: "${node.text}"
+                - Additional Info: "${node.context || 'None'}"
+                Provide the complete analysis and the final answer.`;
+             }
+             const model = settings.inquiryModel;
+             const result = await callGenerativeAI(model, [{ role: 'user', parts: [{ text: promptText }] }], [spinner]);
+             if (result) {
+                 const whatMatch = result.match(/### WHAT\s*([\s\S]*?)(?=### HOW|$)/i);
+                 const howMatch = result.match(/### HOW\s*([\s\S]*?)(?=### IS|$)/i);
+                 const isMatch = result.match(/### IS\s*([\s\S]*?)(?=### FINAL ANSWER|$)/i);
+                 const answerMatch = result.match(/### FINAL ANSWER\s*([\s\S]*)/i);
+                 node.what = whatMatch ? whatMatch[1].trim() : node.what; // Keep existing if parse fails
+                 node.how = howMatch ? howMatch[1].trim() : node.how;
+                 node.is = isMatch ? isMatch[1].trim() : node.is;
+                 node.answer = answerMatch ? answerMatch[1].trim() : 'No final answer provided.';
+                 if (node.id === selectedNodeId) renderDetailPane();
+                 saveState();
+             }
+        }
+        
+        async function handleAiAssist(type, button, spinner, nodeId) {
+             const node = findNodeById(taskTree, nodeId); if (!node) return;
+             const localSpinner = spinner || document.getElementById(`spinner-${nodeId}`);
+             const ancestorContext = getAncestorContext(nodeId);
+             let promptText = `You are an AI assistant helping a user with Socratic inquiry. Be concise and insightful.\n\n${ancestorContext}\nCurrent Task: "${node.text}".\nRelevant context for this task: "${node.context}"\n\n`;
+             let targetTextarea;
+             switch(type) {
+                case 'what': promptText += "Based on this, WHAT is the fundamental problem or goal?"; targetTextarea = whatInput; break;
+                case 'how': promptText += `The stated problem is: "${node.what || 'Not defined yet'}".\nHOW would you propose a concrete, actionable plan to address this?`; targetTextarea = howInput; break;
+                case 'is': promptText += `The proposed plan is: "${node.how || 'Not defined yet'}".\nIS this the best solution? Critically examine it for flaws, risks, or alternatives.`; targetTextarea = isInput; break;
+             }
+             const model = settings.inquiryModel; const result = await callGenerativeAI(model, [{ role: 'user', parts: [{ text: promptText }] }], [button, localSpinner].filter(Boolean));
+             if(result) { node[type] = result; if (node.id === selectedNodeId) targetTextarea.value = result; saveState(); }
+        }
+
+        async function callGenerativeAI(modelName, promptContents, uiElementsToToggle) { /* ... Omitted for brevity, no changes needed ... */ }
+        
+        // --- INITIALIZATION --- (No changes here)
+        apiKeyInput.addEventListener('input', async () => { const key = apiKeyInput.value.trim(); updateApiStatus(key); if (key && deviceEncryptionKey) { const encrypted = await CryptoHelper.encrypt(key, deviceEncryptionKey); localStorage.setItem('encryptedApiKey', JSON.stringify(encrypted)); logStatus("API Key encrypted and saved for this device.", 'success'); } if(!key) { localStorage.removeItem('encryptedApiKey'); } });
+        async function initializeApp() { deviceEncryptionKey = await CryptoHelper.generateKeyFromFingerprint(); const encryptedKeyData = localStorage.getItem('encryptedApiKey'); let decryptedKey = null; if (encryptedKeyData && deviceEncryptionKey) { try { decryptedKey = await CryptoHelper.decrypt(JSON.parse(encryptedKeyData), deviceEncryptionKey); if (decryptedKey) apiKeyInput.value = decryptedKey; else { logStatus("Could not decrypt API key. Normal for a new device. Please re-enter.", "info"); localStorage.removeItem('encryptedApiKey'); } } catch(e) { logStatus("Failed to parse saved API key.", "error"); localStorage.removeItem('encryptedApiKey'); } } updateApiStatus(decryptedKey); loadState(); render(); }
+        initializeApp();
+
+        // Re-adding the full callGenerativeAI function for completeness
+        async function callGenerativeAI(modelName, promptContents, uiElementsToToggle) {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                logStatus('No API Key. Running in Local Mock Mode.', 'info');
+                uiElementsToToggle.forEach(el => { if (el) el.style.display = 'block' });
+                document.querySelectorAll('button').forEach(b => b.disabled = true);
+                await new Promise(resolve => setTimeout(resolve, 800));
+                
+                const lastUserPrompt = promptContents[promptContents.length - 1].parts[0].text;
+                let mockResponse = "This is a mock response from local mode.";
+
+                if (lastUserPrompt.includes("Your output MUST be a single, valid JSON object")) {
+                    mockResponse = `{ "what": "Mock: Define the problem.", "how": "Mock: Create a plan.", "is": "Mock: Analyze the plan.", "subtasks": ["Mock Subtask 1", "Mock Subtask 2"] }`;
+                    if(lastUserPrompt.includes("Subtask")) {
+                         mockResponse = `{ "what": "Mock: Define sub-problem.", "how": "Mock: Plan for sub-problem.", "is": "Mock: Analyze sub-plan.", "subtasks": [] }`;
+                    }
+                } else if (lastUserPrompt.includes("perform a complete Socratic analysis")) {
+                    mockResponse = `### WHAT\nThe core goal is to simulate a complete analysis.\n### HOW\nBy generating structured text that mimics a real AI response.\n### IS\nThis is a good approach for offline development.\n### FINAL ANSWER\nThe mock analysis is complete.`;
+                } else if (lastUserPrompt.includes("Summarize the following text")) {
+                    mockResponse = "[This is a shortened summary of the original context provided in Local Mode.]";
+                }
+                
+                uiElementsToToggle.forEach(el => { if (el) el.style.display = 'none' });
+                document.querySelectorAll('button').forEach(b => b.disabled = false);
+                return mockResponse;
+            }
+
+            if (!modelName) { logStatus('Model name is missing.', 'error'); return null; }
+            uiElementsToToggle.forEach(el => { if (el) el.style.display = 'block' });
+            document.querySelectorAll('button').forEach(b => b.disabled = true);
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName.replace(/^models\//, '')}:generateContent?key=${apiKey}`;
+            try {
+                const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ "contents": promptContents }) });
+                if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.error.message || `HTTP error! status: ${response.status}`); }
+                const data = await response.json();
+                return data.candidates[0].content.parts[0].text;
+            } catch (error) {
+                logStatus(`API Error: ${error.message}`, 'error');
+                return null;
+            } finally {
+                uiElementsToToggle.forEach(el => { if (el) el.style.display = 'none' });
+                document.querySelectorAll('button').forEach(b => b.disabled = false);
+            }
+        }
+    });
+    </script>
+</body>
+</html>
