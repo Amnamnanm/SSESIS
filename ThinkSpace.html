@@ -89,26 +89,29 @@
 <body>
 
     <header class="app-header">
-        <div class="title"><h1>Think<span>Space</span> v1.0</h1></div>
+        <div class="title"><h1>Think<span>Space</span> v1.1</h1></div>
         <div class="controls">
             <button id="new-project-btn" class="header-button">New Project</button>
             <button id="summarize-btn" class="header-button">Summarize</button>
-            <button class="header-button">Generate Solution</button>
             <div class="input-group">
                 <label for="max-depth-input">Max Depth</label>
                 <input type="number" id="max-depth-input" value="3" min="0" max="10" style="width: 70px;">
             </div>
             <div class="input-group">
-                <label for="simplification-model-input">Simplification Model (Gemma)</label>
+                <label for="simplification-model-input">Simplification</label>
                 <input type="text" id="simplification-model-input" placeholder="e.g., models/gemma-3-27b-it">
             </div>
              <div class="input-group">
-                <label for="inquiry-model-input">Inquiry Model (Gemini)</label>
+                <label for="inquiry-model-input">Inquiry</label>
                 <input type="text" id="inquiry-model-input" placeholder="e.g., models/gemini-2.5-flash-lite">
             </div>
             <div class="input-group">
-                <label for="apiKey">Your Google AI API Key (Optional)</label>
-                <input type="password" id="apiKey" placeholder="Encrypted & stored locally" title="Your key is encrypted using a device-specific key. Leave blank for Local Mode.">
+                <label for="solution-model-input">Solution</label>
+                <input type="text" id="solution-model-input" placeholder="e.g., models/gemini-2.5-pro">
+            </div>
+            <div class="input-group">
+                <label for="apiKey">Google AI API Key</label>
+                <input type="password" id="apiKey" placeholder="Encrypted Locally" title="Your key is encrypted using a device-specific key. Leave blank for Local Mode.">
             </div>
             <div id="api-status"></div>
         </div>
@@ -142,22 +145,24 @@
                     </div>
                 </div>
             </div>
-            <div id="status-pane" class="status-pane"><div class="log">Welcome to ThinkSpace v1.0. Enter an API key or use Local Mode.</div></div>
+            <div id="status-pane" class="status-pane"><div class="log">Welcome to ThinkSpace v1.1. Enter an API key or use Local Mode.</div></div>
         </div>
     </main>
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
-        // --- DATA MODEL & STATE ---
         const initialTree = () => ({ id: 'node-root', text: 'Define the ultimate goal here', what: '', how: '', is: '', answer: '', context: '', children: [] });
-        const defaultSettings = { simplificationModel: 'models/gemma-3-27b-it', inquiryModel: 'models/gemini-2.5-flash-lite' };
+        const defaultSettings = { 
+            simplificationModel: 'models/gemma-3-27b-it', 
+            inquiryModel: 'models/gemini-2.5-flash-lite',
+            solutionModel: 'models/gemini-2.5-pro'
+        };
         let taskTree = initialTree();
         let selectedNodeId = 'node-root';
         let nextNodeId = 0;
         let settings = { ...defaultSettings };
         let deviceEncryptionKey = null;
 
-        // --- DOM ELEMENTS ---
         const apiKeyInput = document.getElementById('apiKey');
         const apiStatus = document.getElementById('api-status');
         const treeContainer = document.getElementById('task-tree');
@@ -170,35 +175,32 @@
         const newProjectBtn = document.getElementById('new-project-btn');
         const simplificationModelInput = document.getElementById('simplification-model-input');
         const inquiryModelInput = document.getElementById('inquiry-model-input');
+        const solutionModelInput = document.getElementById('solution-model-input');
         const statusPane = document.getElementById('status-pane');
         const shortenContextBtn = document.getElementById('shorten-context-btn');
         const answerBlock = document.getElementById('whi-answer');
         const answerInput = document.getElementById('answer-input');
         const detailInputs = [contextInput, whatInput, howInput, isInput];
-        // NEW: Get new DOM elements
         const summarizeBtn = document.getElementById('summarize-btn');
         const maxDepthInput = document.getElementById('max-depth-input');
 
-        // --- ENCRYPTION HELPER --- (No changes here)
-        const CryptoHelper = { /* ... Omitted for brevity ... */ };
-        CryptoHelper.getGpuFingerprint = () => { try { const canvas = document.createElement('canvas'); const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl'); if (!gl) return 'no-webgl'; const debugInfo = gl.getExtension('WEBGL_debug_renderer_info'); if (!debugInfo) return 'no-debug-info'; const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL); const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL); return `${vendor}|${renderer}`; } catch (e) { return 'webgl-error'; } };
-        CryptoHelper.getDeviceFingerprint = async () => [navigator.userAgent, navigator.platform, navigator.hardwareConcurrency, screen.width, screen.height, CryptoHelper.getGpuFingerprint()].join('||');
-        CryptoHelper.generateKeyFromFingerprint = async () => { const fingerprint = await CryptoHelper.getDeviceFingerprint(); const data = new TextEncoder().encode(fingerprint); const hash = await crypto.subtle.digest('SHA-256', data); return await crypto.subtle.importKey('raw', hash, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']); };
-        CryptoHelper.encrypt = async (text, key) => { const data = new TextEncoder().encode(text); const iv = crypto.getRandomValues(new Uint8Array(12)); const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data); const ivB64 = btoa(String.fromCharCode.apply(null, iv)); const cipherB64 = btoa(String.fromCharCode.apply(null, new Uint8Array(ciphertext))); return { ivB64, cipherB64 }; };
-        CryptoHelper.decrypt = async (encryptedData, key) => { try { const iv = new Uint8Array(atob(encryptedData.ivB64).split('').map(c => c.charCodeAt(0))); const ciphertext = new Uint8Array(atob(encryptedData.cipherB64).split('').map(c => c.charCodeAt(0))); const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext); return new TextDecoder().decode(decrypted); } catch (e) { console.error("Decryption failed.", e); return null; } };
+        const CryptoHelper = {
+            getGpuFingerprint: () => { try { const canvas = document.createElement('canvas'); const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl'); if (!gl) return 'no-webgl'; const debugInfo = gl.getExtension('WEBGL_debug_renderer_info'); if (!debugInfo) return 'no-debug-info'; const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL); const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL); return `${vendor}|${renderer}`; } catch (e) { return 'webgl-error'; } },
+            getDeviceFingerprint: async () => [navigator.userAgent, navigator.platform, navigator.hardwareConcurrency, screen.width, screen.height, CryptoHelper.getGpuFingerprint()].join('||'),
+            generateKeyFromFingerprint: async () => { const fingerprint = await CryptoHelper.getDeviceFingerprint(); const data = new TextEncoder().encode(fingerprint); const hash = await crypto.subtle.digest('SHA-256', data); return await crypto.subtle.importKey('raw', hash, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']); },
+            encrypt: async (text, key) => { const data = new TextEncoder().encode(text); const iv = crypto.getRandomValues(new Uint8Array(12)); const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data); const ivB64 = btoa(String.fromCharCode.apply(null, iv)); const cipherB64 = btoa(String.fromCharCode.apply(null, new Uint8Array(ciphertext))); return { ivB64, cipherB64 }; },
+            decrypt: async (encryptedData, key) => { try { const iv = new Uint8Array(atob(encryptedData.ivB64).split('').map(c => c.charCodeAt(0))); const ciphertext = new Uint8Array(atob(encryptedData.cipherB64).split('').map(c => c.charCodeAt(0))); const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext); return new TextDecoder().decode(decrypted); } catch (e) { console.error("Decryption failed.", e); return null; } }
+        };
 
-        // --- LOGGING & FEEDBACK --- (No changes here)
         function logStatus(message, type = 'info') { const log = document.createElement('div'); log.className = `log ${type}`; log.textContent = `[${new Date().toLocaleTimeString()}] ${message}`; statusPane.appendChild(log); statusPane.scrollTop = statusPane.scrollHeight; }
 
-        // --- CORE RENDER & STATE FUNCTIONS --- (No changes here)
         function renderTree() { treeContainer.innerHTML = ''; const treeElement = createNodeElement(taskTree); treeContainer.appendChild(treeElement); }
         function render() { renderTree(); renderDetailPane(); }
         function saveState() { try { localStorage.setItem('thinkSpaceState', JSON.stringify({ tree: taskTree, nextId: nextNodeId, settings: settings })); } catch (e) { console.error("Failed to save state:", e); } }
-        function loadState() { try { const savedState = localStorage.getItem('thinkSpaceState'); if (savedState) { const state = JSON.parse(savedState); taskTree = state.tree || initialTree(); nextNodeId = state.nextId || 0; settings = state.settings || { ...defaultSettings }; } } catch (e) { console.error("Failed to load state, resetting.", e); taskTree = initialTree(); settings = { ...defaultSettings }; } simplificationModelInput.value = settings.simplificationModel; inquiryModelInput.value = settings.inquiryModel; }
+        function loadState() { try { const savedState = localStorage.getItem('thinkSpaceState'); if (savedState) { const state = JSON.parse(savedState); taskTree = state.tree || initialTree(); nextNodeId = state.nextId || 0; settings = state.settings || { ...defaultSettings }; } } catch (e) { console.error("Failed to load state, resetting.", e); taskTree = initialTree(); settings = { ...defaultSettings }; } simplificationModelInput.value = settings.simplificationModel; inquiryModelInput.value = settings.inquiryModel; solutionModelInput.value = settings.solutionModel || defaultSettings.solutionModel; }
         function createNodeElement(node) { const ul = document.createElement('ul'); if (node.id === 'node-root') { ul.style.paddingLeft = '0'; ul.style.border = 'none'; } const li = document.createElement('li'); li.innerHTML = `<div class="node-content" id="${node.id}" data-node-id="${node.id}"><div class="node-text" contenteditable="true" data-node-id="${node.id}">${node.text}</div><div class="spinner" id="spinner-${node.id}"></div><div class="node-actions" style="display:flex; gap:0.5rem;"><button class="run-btn" title="Run Autonomous Agent" data-action="ai-run" data-node-id="${node.id}">&#9654;</button><button class="ai-btn" title="AI Simplify (Manual)" data-action="ai-simplify" data-node-id="${node.id}">&#10024;</button><button class="add-btn" title="Add Child (Manual)" data-action="add-children" data-node-id="${node.id}">➕</button>${node.id !== 'node-root' ? `<button class="del-btn" title="Delete Node" data-action="delete" data-node-id="${node.id}">🗑️</button>` : ''}</div></div>`; if (node.children && node.children.length > 0) { node.children.forEach(child => li.appendChild(createNodeElement(child))); } ul.appendChild(li); setTimeout(() => { const nodeEl = document.getElementById(node.id); if (nodeEl && node.id === selectedNodeId) nodeEl.classList.add('selected'); }, 0); return ul; }
         function renderDetailPane() { const node = findNodeById(taskTree, selectedNodeId); if (node) { detailPlaceholder.style.display = 'none'; detailContent.style.display = 'flex'; contextInput.value = node.context; whatInput.value = node.what; howInput.value = node.how; isInput.value = node.is; if (node.answer) { answerInput.value = node.answer; answerBlock.style.display = 'flex'; } else { answerBlock.style.display = 'none'; } } else { detailPlaceholder.style.display = 'block'; detailContent.style.display = 'none'; } }
 
-        // --- DATA MANIPULATION & HELPERS --- (No changes here)
         function findNodeById(node, id) { if (!node) return null; if (node.id === id) return node; for (const child of node.children) { const found = findNodeById(child, id); if (found) return found; } return null; }
         function findParentNode(node, id) { for (const child of node.children) { if (child.id === id) return node; const found = findParentNode(child, id); if (found) return found; } return null; }
         function generateNodeId() { return `node-${++nextNodeId}`; }
@@ -207,45 +209,63 @@
         function getAncestorContext(nodeId) { let path = []; let current = findNodeById(taskTree, nodeId); let parent = findParentNode(taskTree, nodeId); while (parent) { path.unshift(`"${parent.text}"`); current = parent; parent = findParentNode(taskTree, current.id); } if (path.length === 0) return "This is the root task."; return `The context for the current task is the following path from the main goal: ${path.join(" -> ")}.`; }
         function updateApiStatus(key) { if (key && key.length > 10) { apiStatus.textContent = '● API Key Loaded'; apiStatus.style.color = 'var(--success-color)'; } else { apiStatus.textContent = '● Local Mode (No Key)'; apiStatus.style.color = 'var(--secondary-color)'; } }
 
-        // --- EVENT LISTENERS ---
         treeContainer.addEventListener('click', e => { const nodeContent = e.target.closest('.node-content'); if (nodeContent && nodeContent.id !== selectedNodeId) { selectedNodeId = nodeContent.id; render(); } const actionBtn = e.target.closest('button'); if(actionBtn) { const { action, nodeId } = actionBtn.dataset; if (action === 'add-children') addChildrenToNode(nodeId, ['New Sub-Task']); if (action === 'ai-simplify') handleAiSimplify(nodeId); if (action === 'ai-run') handleAiRun(nodeId); if (action === 'delete') { if (confirm('Are you sure you want to delete this node and all its children?')) deleteNode(nodeId); } } });
         treeContainer.addEventListener('input', e => { if (e.target.classList.contains('node-text')) { const node = findNodeById(taskTree, e.target.dataset.nodeId); if (node) { node.text = e.target.textContent; saveState(); } } });
         detailInputs.forEach(input => input.addEventListener('input', () => { const key = input.id.split('-')[0]; const node = findNodeById(taskTree, selectedNodeId); if(node) { node[key] = input.value; saveState(); } }));
         detailContent.addEventListener('click', e => { if(e.target.classList.contains('ai-assist-btn')) handleAiAssist(e.target.dataset.type, e.target, null, selectedNodeId); });
         newProjectBtn.addEventListener('click', () => { if (confirm('Are you sure? This will start a new project. Your API key will be saved.')) { localStorage.removeItem('thinkSpaceState'); location.reload(); } });
-        const settingsInputs = [simplificationModelInput, inquiryModelInput];
-        settingsInputs.forEach(input => input.addEventListener('change', () => { settings.simplificationModel = simplificationModelInput.value.trim(); settings.inquiryModel = inquiryModelInput.value.trim(); saveState(); }));
+        
+        const settingsInputs = [simplificationModelInput, inquiryModelInput, solutionModelInput];
+        settingsInputs.forEach(input => input.addEventListener('change', () => { 
+            settings.simplificationModel = simplificationModelInput.value.trim(); 
+            settings.inquiryModel = inquiryModelInput.value.trim(); 
+            settings.solutionModel = solutionModelInput.value.trim(); 
+            saveState(); 
+        }));
+        
         shortenContextBtn.addEventListener('click', async () => { const node = findNodeById(taskTree, selectedNodeId); if (!node || !node.context) { logStatus("No context to shorten.", "info"); return; } logStatus("Shortening context...", "plan"); const prompt = `Summarize the following text into its most essential points for an AI assistant. Be very concise.\n\nCONTEXT:\n${node.context}`; const summary = await callGenerativeAI(settings.inquiryModel, [{ role: 'user', parts: [{ text: prompt }] }], [shortenContextBtn]); if (summary) { node.context = summary; contextInput.value = summary; saveState(); logStatus("Context shortened successfully.", "success"); } else { logStatus("Failed to shorten context.", "error"); } });
 
-        // NEW: Event listener for the Summarize button
-        summarizeBtn.addEventListener('click', () => {
+        summarizeBtn.addEventListener('click', async () => {
             const rootNode = findNodeById(taskTree, 'node-root');
-            if (rootNode && rootNode.answer) {
-                alert(`--- Final Summary ---\n\n${rootNode.answer}`);
+            if (!rootNode) return;
+            logStatus("Generating Summary via Model 3...", "plan");
+            
+            const dumpTree = (n) => {
+                let s = `Task: ${n.text}\nAnalysis: ${n.what} | ${n.how} | ${n.is}\nStatus: ${n.answer || 'Pending'}`;
+                if (n.children && n.children.length) {
+                    s += `\nSubtasks:\n${n.children.map(c => dumpTree(c)).join('\n---\n')}`;
+                }
+                return s;
+            };
+
+            const fullContext = dumpTree(rootNode);
+            const prompt = `You are a high-level capability model (Gemini 2.5 Pro). Analyze the following task tree structure and execution status. Synthesize a comprehensive final answer and summary, regardless of whether sub-tasks are fully complete. Fill in gaps logically. You must provide the full summarization, particular solution and a plan how to do it. Consider user NOT knowing about the project at all, with all previous steps being done by AI and not being ever read. You can NOT say "good work!" or other similar phrases. You MUST give complete solution.\n\nTREE DATA:\n${fullContext}`;
+            
+            const summary = await callGenerativeAI(settings.solutionModel, [{ role: 'user', parts: [{ text: prompt }] }], [summarizeBtn]);
+            
+            if (summary) {
+                rootNode.answer = summary;
+                if(selectedNodeId === 'node-root') renderDetailPane();
+                logStatus("Summary generated successfully.", "success");
+                alert("Summary Generated:\n\n" + summary);
             } else {
-                alert("The autonomous agent has not finished yet. Please run the agent on the root node and wait for it to complete.");
+                logStatus("Failed to generate summary.", "error");
             }
         });
 
-        // --- API & AI LOGIC ---
-        
         async function handleAiRun(nodeId) {
             const rootNode = findNodeById(taskTree, nodeId);
             if (!rootNode) return;
             logStatus(`Orchestrator starting for node: "${rootNode.text}"`, 'info');
             rootNode.answer = '';
-            
-            // NEW: Read max depth from the input field
             const maxDepth = parseInt(maxDepthInput.value, 10) || 3;
             logStatus(`Max recursion depth set to: ${maxDepth}`, 'info');
-
-            await recursiveDecomposition(rootNode, 0, maxDepth); // Pass maxDepth
+            await recursiveDecomposition(rootNode, 0, maxDepth);
             logStatus('Orchestrator finished.', 'success');
         }
 
-        // NEW: recursiveDecomposition now accepts maxDepth
         async function recursiveDecomposition(node, depth, maxDepth) {
-            if (depth >= maxDepth) { // Use the maxDepth parameter
+            if (depth >= maxDepth) {
                 logStatus(`Max recursion depth reached for "${node.text}". Executing as is.`, 'info');
                 await handleOptimizedExecution(node);
                 return;
@@ -260,7 +280,7 @@
                 const subNodes = findNodeById(taskTree, node.id).children;
 
                 for (const subNode of subNodes) {
-                    await recursiveDecomposition(subNode, depth + 1, maxDepth); // Pass maxDepth down
+                    await recursiveDecomposition(subNode, depth + 1, maxDepth);
                 }
                 logStatus(`Synthesizing solution for parent: "${node.text}"`, 'plan');
                 await handleOptimizedExecution(node, true);
@@ -270,7 +290,6 @@
             }
         }
 
-        // <<< MAJOR CHANGE: handleAiSimplify now generates WHAT, HOW, IS and subtasks in one call >>>
         async function handleAiSimplify(nodeId, silent = false) {
             const node = findNodeById(taskTree, nodeId);
             if (!node) return null;
@@ -278,8 +297,7 @@
             const spinner = document.getElementById(`spinner-${nodeId}`);
             const ancestorContext = getAncestorContext(nodeId);
             
-            // NEW: The prompt now asks for a comprehensive JSON object.
-            let promptText = `You are an expert task planner and analyst. Your goal is to analyze a task and, if necessary, break it down.
+            let promptText = `You are an expert task planner. Your goal is to analyze a task and, if necessary, break it down.
             Your output MUST be a single, valid JSON object with the following structure:
             {
               "what": "A concise definition of the core problem or goal.",
@@ -296,24 +314,14 @@
             const result = await callGenerativeAI(model, [{ role: 'user', parts: [{ text: promptText }] }], [spinner]);
             if (result) {
                 try {
-                    // Find and parse the JSON object from the response
                     const jsonString = result.match(/\{[\s\S]*\}/)[0];
                     const analysis = JSON.parse(jsonString);
-
-                    // Update the current node with the new analysis
                     node.what = analysis.what || 'AI response format error.';
                     node.how = analysis.how || 'AI response format error.';
                     node.is = analysis.is || 'AI response format error.';
-
-                    if (node.id === selectedNodeId) {
-                        renderDetailPane(); // Update the UI if this node is selected
-                    }
+                    if (node.id === selectedNodeId) renderDetailPane();
                     saveState();
-
-                    // Return the subtasks for the orchestrator to process
-                    if (Array.isArray(analysis.subtasks)) {
-                        return analysis.subtasks;
-                    }
+                    if (Array.isArray(analysis.subtasks)) return analysis.subtasks;
                     return []; 
                 } catch (e) {
                     logStatus(`Planner Agent returned an invalid JSON object format. Error: ${e.message}`, "error");
@@ -329,6 +337,7 @@
              const spinner = document.getElementById(`spinner-${node.id}`);
              const ancestorContext = getAncestorContext(node.id);
              let promptText;
+             
              if (isSynthesizing) {
                 let childrenContext = node.children.map(c => `- Sub-task "${c.text}":\n  - Solution: ${c.answer || 'Not yet solved.'}`).join("\n");
                 promptText = `You are a manager AI synthesizing a final solution from your team's work.
@@ -346,14 +355,16 @@
                 - Additional Info: "${node.context || 'None'}"
                 Provide the complete analysis and the final answer.`;
              }
-             const model = settings.inquiryModel;
+             
+             const model = isSynthesizing ? settings.solutionModel : settings.inquiryModel;
+
              const result = await callGenerativeAI(model, [{ role: 'user', parts: [{ text: promptText }] }], [spinner]);
              if (result) {
                  const whatMatch = result.match(/### WHAT\s*([\s\S]*?)(?=### HOW|$)/i);
                  const howMatch = result.match(/### HOW\s*([\s\S]*?)(?=### IS|$)/i);
                  const isMatch = result.match(/### IS\s*([\s\S]*?)(?=### FINAL ANSWER|$)/i);
                  const answerMatch = result.match(/### FINAL ANSWER\s*([\s\S]*)/i);
-                 node.what = whatMatch ? whatMatch[1].trim() : node.what; // Keep existing if parse fails
+                 node.what = whatMatch ? whatMatch[1].trim() : node.what; 
                  node.how = howMatch ? howMatch[1].trim() : node.how;
                  node.is = isMatch ? isMatch[1].trim() : node.is;
                  node.answer = answerMatch ? answerMatch[1].trim() : 'No final answer provided.';
@@ -377,14 +388,6 @@
              if(result) { node[type] = result; if (node.id === selectedNodeId) targetTextarea.value = result; saveState(); }
         }
 
-        async function callGenerativeAI(modelName, promptContents, uiElementsToToggle) { /* ... Omitted for brevity, no changes needed ... */ }
-        
-        // --- INITIALIZATION --- (No changes here)
-        apiKeyInput.addEventListener('input', async () => { const key = apiKeyInput.value.trim(); updateApiStatus(key); if (key && deviceEncryptionKey) { const encrypted = await CryptoHelper.encrypt(key, deviceEncryptionKey); localStorage.setItem('encryptedApiKey', JSON.stringify(encrypted)); logStatus("API Key encrypted and saved for this device.", 'success'); } if(!key) { localStorage.removeItem('encryptedApiKey'); } });
-        async function initializeApp() { deviceEncryptionKey = await CryptoHelper.generateKeyFromFingerprint(); const encryptedKeyData = localStorage.getItem('encryptedApiKey'); let decryptedKey = null; if (encryptedKeyData && deviceEncryptionKey) { try { decryptedKey = await CryptoHelper.decrypt(JSON.parse(encryptedKeyData), deviceEncryptionKey); if (decryptedKey) apiKeyInput.value = decryptedKey; else { logStatus("Could not decrypt API key. Normal for a new device. Please re-enter.", "info"); localStorage.removeItem('encryptedApiKey'); } } catch(e) { logStatus("Failed to parse saved API key.", "error"); localStorage.removeItem('encryptedApiKey'); } } updateApiStatus(decryptedKey); loadState(); render(); }
-        initializeApp();
-
-        // Re-adding the full callGenerativeAI function for completeness
         async function callGenerativeAI(modelName, promptContents, uiElementsToToggle) {
             const apiKey = apiKeyInput.value.trim();
             if (!apiKey) {
@@ -401,10 +404,10 @@
                     if(lastUserPrompt.includes("Subtask")) {
                          mockResponse = `{ "what": "Mock: Define sub-problem.", "how": "Mock: Plan for sub-problem.", "is": "Mock: Analyze sub-plan.", "subtasks": [] }`;
                     }
-                } else if (lastUserPrompt.includes("perform a complete Socratic analysis")) {
+                } else if (lastUserPrompt.includes("perform a complete Socratic analysis") || lastUserPrompt.includes("synthesizing a final solution")) {
                     mockResponse = `### WHAT\nThe core goal is to simulate a complete analysis.\n### HOW\nBy generating structured text that mimics a real AI response.\n### IS\nThis is a good approach for offline development.\n### FINAL ANSWER\nThe mock analysis is complete.`;
-                } else if (lastUserPrompt.includes("Summarize the following text")) {
-                    mockResponse = "[This is a shortened summary of the original context provided in Local Mode.]";
+                } else if (lastUserPrompt.includes("Summarize the following text") || lastUserPrompt.includes("Analyze the following task tree")) {
+                    mockResponse = "[This is a generated summary of the tree provided in Local Mode using the Solution Model.]";
                 }
                 
                 uiElementsToToggle.forEach(el => { if (el) el.style.display = 'none' });
@@ -429,6 +432,10 @@
                 document.querySelectorAll('button').forEach(b => b.disabled = false);
             }
         }
+
+        apiKeyInput.addEventListener('input', async () => { const key = apiKeyInput.value.trim(); updateApiStatus(key); if (key && deviceEncryptionKey) { const encrypted = await CryptoHelper.encrypt(key, deviceEncryptionKey); localStorage.setItem('encryptedApiKey', JSON.stringify(encrypted)); logStatus("API Key encrypted and saved for this device.", 'success'); } if(!key) { localStorage.removeItem('encryptedApiKey'); } });
+        async function initializeApp() { deviceEncryptionKey = await CryptoHelper.generateKeyFromFingerprint(); const encryptedKeyData = localStorage.getItem('encryptedApiKey'); let decryptedKey = null; if (encryptedKeyData && deviceEncryptionKey) { try { decryptedKey = await CryptoHelper.decrypt(JSON.parse(encryptedKeyData), deviceEncryptionKey); if (decryptedKey) apiKeyInput.value = decryptedKey; else { logStatus("Could not decrypt API key. Normal for a new device. Please re-enter.", "info"); localStorage.removeItem('encryptedApiKey'); } } catch(e) { logStatus("Failed to parse saved API key.", "error"); localStorage.removeItem('encryptedApiKey'); } } updateApiStatus(decryptedKey); loadState(); render(); }
+        initializeApp();
     });
     </script>
 </body>
