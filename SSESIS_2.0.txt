@@ -191,7 +191,7 @@ ReAct ensures reasoning and action are continuously integrated. Acting without r
 Simplification prevents cognitive overload. Breaking tasks into micro-steps allows focus on actionable elements and precise critique.
 
 
-You MUST provide a tree of throughts (ToT) of WHIS-ReAct architecture and your final output MUST match your thoughts
+You MUST provide a tree of throughts (ToT) of WHIS-ReAct architecture and your final output MUST match your thoughts. You also must never stop until you find a solution that will satisfy user's needs
 
 Execution example:
 
